@@ -49,6 +49,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - name: Publish if version is new
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           LOCAL=$(node -p "require('./package.json').version")
           REMOTE=$(npm view @ant.ms/anily-providers version 2>/dev/null || echo "0.0.0")
