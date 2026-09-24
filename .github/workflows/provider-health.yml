@@ -1,0 +1,24 @@
+name: Provider Health Monitor
+
+on:
+  schedule:
+    # Run twice daily at 06:00 and 18:00 UTC
+    - cron: "0 6,18 * * *"
+  workflow_dispatch:
+
+jobs:
+  check-providers:
+    name: Verify Upstream Providers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run Live Integration Tests
+        run: pnpm test:live

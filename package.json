@@ -1,0 +1,56 @@
+{
+  "name": "@ant.ms/anily-providers",
+  "version": "1.0.0",
+  "description": "High-reliability anime streaming provider resolvers, scrapers, and stream quality verifiers for Anily",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "anime",
+    "streaming",
+    "providers",
+    "anily",
+    "scrapers",
+    "hls"
+  ],
+  "license": "MIT",
+  "author": "Yanik Ammann <yanik@ant.ms>",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@vitest/coverage-v8": "^4.1.9",
+    "dotenv": "^17.4.2",
+    "prettier": "^3.8.3",
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}
