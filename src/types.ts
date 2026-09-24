@@ -60,7 +60,17 @@ export interface Logger {
   error(data?: unknown, msg?: string): void;
 }
 
+export interface TitleMatcherOptions {
+  openRouterApiKey?: string;
+  openRouterModel?: string;
+  customLlmMatcher?: (
+    targetTitle: string,
+    candidates: ProviderSearchResult[],
+  ) => Promise<ProviderSearchResult | null>;
+}
+
 export type TitleMatcherFn = (
   targetTitles: string[],
   searchResults: ProviderSearchResult[],
+  options?: TitleMatcherOptions,
 ) => Promise<ProviderSearchResult | null> | ProviderSearchResult | null;

@@ -7,21 +7,27 @@ import type {
 } from "../types.js";
 import { AbstractProvider, type ProviderOptions } from "./base.js";
 import { getLogger } from "../utils/logger.js";
-import { DEFAULT_USER_AGENT } from "../utils/headers.js";
+import { getDefaultHeaders } from "../utils/headers.js";
+import { BoundedCache } from "../utils/cache.js";
 
 const API_BASE = "https://core.justanime.to/api";
-const DEFAULT_HEADERS = {
-  "User-Agent": DEFAULT_USER_AGENT,
+const DEFAULT_HEADERS = getDefaultHeaders({
   Origin: "https://justanime.to",
   Referer: "https://justanime.to/",
-};
+});
 
 export class JustAnimeProvider extends AbstractProvider {
   readonly id = "justanime";
   readonly name = "JustAnime";
 
-  private searchCache = new Map<string, ProviderSearchResult[]>();
-  private episodesCache = new Map<string, number[]>();
+  private searchCache = new BoundedCache<string, ProviderSearchResult[]>({
+    maxSize: 300,
+    ttlMs: 10 * 60 * 1000,
+  });
+  private episodesCache = new BoundedCache<string, number[]>({
+    maxSize: 300,
+    ttlMs: 30 * 60 * 1000,
+  });
 
   constructor(options?: ProviderOptions) {
     super(options);
@@ -36,8 +42,9 @@ export class JustAnimeProvider extends AbstractProvider {
     if (!cleanQuery) return [];
 
     const cacheKey = cleanQuery.toLowerCase();
-    if (this.searchCache.has(cacheKey)) {
-      return this.searchCache.get(cacheKey)!;
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     try {
@@ -100,8 +107,9 @@ export class JustAnimeProvider extends AbstractProvider {
       { id: "zokoanime", name: "HD - ZokoAnime" },
     ];
 
-    if (this.episodesCache.has(identifier)) {
-      return { episodes: this.episodesCache.get(identifier)!, servers };
+    const cached = this.episodesCache.get(identifier);
+    if (cached) {
+      return { episodes: cached, servers };
     }
 
     try {

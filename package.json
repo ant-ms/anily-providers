@@ -30,6 +30,7 @@
     "test:coverage": "vitest run --coverage",
     "test:live": "vitest run --config vitest.live.config.ts",
     "lint": "prettier --check .",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "prepublishOnly": "npm run build"
   },

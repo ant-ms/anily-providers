@@ -7,21 +7,27 @@ import type {
 } from "../types.js";
 import { AbstractProvider, type ProviderOptions } from "./base.js";
 import { getLogger } from "../utils/logger.js";
-import { DEFAULT_USER_AGENT } from "../utils/headers.js";
+import { getDefaultHeaders } from "../utils/headers.js";
 import { deobfuscateOtakuBlob } from "../utils/cipher.js";
+import { BoundedCache } from "../utils/cache.js";
+import { decodeHtmlEntities } from "../utils/html.js";
 
 const BASE_URL = "https://hianime.at";
-const DEFAULT_HEADERS = {
-  "User-Agent": DEFAULT_USER_AGENT,
-};
+const DEFAULT_HEADERS = getDefaultHeaders();
 
 export class HiAnimeProvider extends AbstractProvider {
   readonly id = "hianime";
   readonly name = "HiAnime";
 
-  private searchCache = new Map<string, ProviderSearchResult[]>();
+  private searchCache = new BoundedCache<string, ProviderSearchResult[]>({
+    maxSize: 300,
+    ttlMs: 10 * 60 * 1000,
+  });
   // Map identifier -> Map episodeNumber -> episodeId
-  private episodeIdCache = new Map<string, Map<number, string>>();
+  private episodeIdCache = new BoundedCache<string, Map<number, string>>({
+    maxSize: 300,
+    ttlMs: 30 * 60 * 1000,
+  });
 
   constructor(options?: ProviderOptions) {
     super(options);
@@ -36,8 +42,9 @@ export class HiAnimeProvider extends AbstractProvider {
     if (!cleanQuery) return [];
 
     const cacheKey = cleanQuery.toLowerCase();
-    if (this.searchCache.has(cacheKey)) {
-      return this.searchCache.get(cacheKey)!;
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     try {
@@ -68,11 +75,7 @@ export class HiAnimeProvider extends AbstractProvider {
         if (!nameMatch) continue;
 
         const rawSlug = nameMatch[1];
-        const name = nameMatch[2]
-          .replace(/&#039;/g, "'")
-          .replace(/&quot;/g, '"')
-          .replace(/&amp;/g, "&")
-          .trim();
+        const name = decodeHtmlEntities(nameMatch[2]).trim();
 
         const hasSub = chunk.includes("tick-sub");
         const hasDub = chunk.includes("tick-dub");

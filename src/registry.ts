@@ -4,15 +4,13 @@ import type {
   StreamLanguage,
   StreamSource,
   TitleMatcherFn,
+  TitleMatcherOptions,
 } from "./types.js";
 import { getServiceScore } from "./qualityScore.js";
 import { AnimeHubProvider } from "./providers/animehub.js";
 import { HiAnimeProvider } from "./providers/hianime.js";
 import { JustAnimeProvider } from "./providers/justanime.js";
-import {
-  matchBestSearchResult,
-  type TitleMatcherOptions,
-} from "./titleMatcher.js";
+import { matchBestSearchResult } from "./titleMatcher.js";
 import { getLogger } from "./utils/logger.js";
 
 export interface RegistryOptions {
@@ -81,48 +79,73 @@ export class ProviderRegistry {
     await Promise.all(
       providers.map(async (provider) => {
         try {
-          // Find matching identifier in this provider
-          let matchedIdentifier: string | null = null;
-          let matchedLanguages: StreamLanguage[] = ["sub"];
+          const providerCheck = async () => {
+            // Find matching identifier in this provider
+            let matchedIdentifier: string | null = null;
+            let matchedLanguages: StreamLanguage[] = ["sub"];
 
-          for (const title of validTitles) {
-            const searchResults = await provider.search(title);
-            if (searchResults.length > 0) {
-              const match = await this.titleMatcher(validTitles, searchResults);
-              if (match) {
-                matchedIdentifier = match.identifier;
-                matchedLanguages = match.languages;
-                break;
+            for (const title of validTitles) {
+              const searchResults = await provider.search(title);
+              if (searchResults.length > 0) {
+                const match = await this.titleMatcher(
+                  validTitles,
+                  searchResults,
+                  options?.titleMatcherOptions,
+                );
+                if (match) {
+                  matchedIdentifier = match.identifier;
+                  matchedLanguages = match.languages;
+                  break;
+                }
               }
             }
-          }
 
-          if (!matchedIdentifier) return;
+            if (!matchedIdentifier) return;
 
-          // Check availability for each language supported, prioritizing sub then dub
-          const sortedLanguages = Array.from(new Set(matchedLanguages)).sort(
-            (a, b) => (a === "sub" ? -1 : 1),
-          );
-
-          for (const lang of sortedLanguages) {
-            const { episodes, servers } = await provider.getEpisodes(
-              matchedIdentifier,
-              lang,
+            // Check availability for each language supported, prioritizing sub then dub
+            const sortedLanguages = Array.from(new Set(matchedLanguages)).sort(
+              (a, b) => (a === "sub" ? -1 : 1),
             );
 
-            // Check if episode number exists in episodes list
-            if (episodes.includes(episodeNumber)) {
-              for (const server of servers) {
-                results.push({
-                  providerId: provider.id,
-                  providerName: provider.name,
-                  serverName: server.name,
-                  serverId: server.id,
-                  language: lang,
-                  identifier: matchedIdentifier,
-                });
+            for (const lang of sortedLanguages) {
+              const { episodes, servers } = await provider.getEpisodes(
+                matchedIdentifier,
+                lang,
+              );
+
+              // Check if episode number exists in episodes list
+              if (episodes.includes(episodeNumber)) {
+                for (const server of servers) {
+                  results.push({
+                    providerId: provider.id,
+                    providerName: provider.name,
+                    serverName: server.name,
+                    serverId: server.id,
+                    language: lang,
+                    identifier: matchedIdentifier,
+                  });
+                }
               }
             }
+          };
+
+          if (options?.timeoutMs && options.timeoutMs > 0) {
+            await Promise.race([
+              providerCheck(),
+              new Promise<void>((_, reject) =>
+                setTimeout(
+                  () =>
+                    reject(
+                      new Error(
+                        `Provider check timed out after ${options.timeoutMs}ms`,
+                      ),
+                    ),
+                  options.timeoutMs,
+                ),
+              ),
+            ]);
+          } else {
+            await providerCheck();
           }
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);

@@ -1,14 +1,7 @@
-import type { ProviderSearchResult } from "./types.js";
+import type { ProviderSearchResult, TitleMatcherOptions } from "./types.js";
 import { getLogger } from "./utils/logger.js";
 
-export interface TitleMatcherOptions {
-  openRouterApiKey?: string;
-  openRouterModel?: string;
-  customLlmMatcher?: (
-    targetTitle: string,
-    candidates: ProviderSearchResult[],
-  ) => Promise<ProviderSearchResult | null>;
-}
+export type { TitleMatcherOptions };
 
 export function normalizeTitle(str: string): string {
   return str
@@ -131,7 +124,15 @@ export async function matchBestSearchResult(
   if (searchResults.length === 0) return null;
   if (searchResults.length === 1) return searchResults[0];
 
-  const cleanTargets = targetTitles.map((t) => ({
+  const validTitles = (targetTitles || [])
+    .map((t) => (typeof t === "string" ? t.trim() : ""))
+    .filter((t): t is string => t.length > 0);
+
+  if (validTitles.length === 0) {
+    return searchResults[0];
+  }
+
+  const cleanTargets = validTitles.map((t) => ({
     original: t,
     norm: normalizeTitle(t),
     season: extractSeasonNumber(t),
@@ -149,7 +150,7 @@ export async function matchBestSearchResult(
   if (options?.customLlmMatcher) {
     try {
       const customMatch = await options.customLlmMatcher(
-        targetTitles[0],
+        cleanTargets[0].original,
         searchResults,
       );
       if (customMatch) return customMatch;
@@ -158,7 +159,7 @@ export async function matchBestSearchResult(
     }
   } else if (options?.openRouterApiKey || process.env.OPENROUTER_API_KEY) {
     const llmMatch = await callOpenRouterFallback(
-      targetTitles[0],
+      cleanTargets[0].original,
       searchResults,
       options?.openRouterApiKey,
       options?.openRouterModel,

@@ -76,6 +76,65 @@ describe("ProviderRegistry (Unit)", () => {
     expect(stream?.url).toBe("https://p1.example.com/frieren/1.m3u8");
   });
 
+  it("passes titleMatcherOptions to the title matcher during checkAvailability", async () => {
+    let capturedOptions: unknown = null;
+    const customMatcher = async (
+      titles: string[],
+      candidates: ProviderSearchResult[],
+      opts?: unknown,
+    ) => {
+      capturedOptions = opts;
+      return candidates[0];
+    };
+
+    const p1 = createMockProvider("p1", "P1", [{ id: "s1", name: "S1" }]);
+    const registry = new ProviderRegistry({
+      providers: [p1],
+      titleMatcher: customMatcher,
+    });
+
+    const matcherOptions = { openRouterApiKey: "key-123" };
+    await registry.checkAvailability(["Frieren"], 1, {
+      titleMatcherOptions: matcherOptions,
+    });
+
+    expect(capturedOptions).toEqual(matcherOptions);
+  });
+
+  it("handles provider timeout gracefully without blocking fast providers", async () => {
+    const fastProvider = createMockProvider("fast", "Fast", [
+      { id: "s1", name: "Fast Server" },
+    ]);
+
+    const hangingProvider: BaseProvider = {
+      id: "slow",
+      name: "Slow",
+      search: async () => {
+        // Simulates stalled request
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return [{ identifier: "slow-id", name: "Frieren", languages: ["sub"] }];
+      },
+      getEpisodes: async () => ({
+        episodes: [1],
+        servers: [{ id: "s2", name: "Slow Server" }],
+      }),
+      getStream: async () => null,
+    };
+
+    const registry = new ProviderRegistry({
+      providers: [fastProvider, hangingProvider],
+    });
+
+    // Run with 50ms timeout
+    const services = await registry.checkAvailability(["Frieren"], 1, {
+      timeoutMs: 50,
+    });
+
+    // Fast provider should have resolved, slow provider should have timed out
+    expect(services.some((s) => s.providerId === "fast")).toBe(true);
+    expect(services.some((s) => s.providerId === "slow")).toBe(false);
+  });
+
   it("returns null when resolving with unknown provider", async () => {
     const registry = new ProviderRegistry({ providers: [] });
     const stream = await registry.resolveStream("unknown", "frieren", 1, "sub");

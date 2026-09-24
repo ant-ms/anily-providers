@@ -44,3 +44,5 @@ export {
 export { deobfuscateOtakuBlob, obfuscateOtakuBlob } from "./utils/cipher.js";
 export { DEFAULT_USER_AGENT, getDefaultHeaders } from "./utils/headers.js";
 export { setLogger, getLogger, nullLogger } from "./utils/logger.js";
+export { BoundedCache, type CacheOptions } from "./utils/cache.js";
+export { decodeHtmlEntities } from "./utils/html.js";

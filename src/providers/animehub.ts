@@ -6,18 +6,21 @@ import type {
 } from "../types.js";
 import { AbstractProvider, type ProviderOptions } from "./base.js";
 import { getLogger } from "../utils/logger.js";
-import { DEFAULT_USER_AGENT } from "../utils/headers.js";
+import { getDefaultHeaders } from "../utils/headers.js";
+import { BoundedCache } from "../utils/cache.js";
+import { decodeHtmlEntities } from "../utils/html.js";
 
 const BASE_URL = "https://123animehub.cc";
-const DEFAULT_HEADERS = {
-  "User-Agent": DEFAULT_USER_AGENT,
-};
+const DEFAULT_HEADERS = getDefaultHeaders();
 
 export class AnimeHubProvider extends AbstractProvider {
   readonly id = "animehub";
   readonly name = "AnimeHub";
 
-  private searchCache = new Map<string, ProviderSearchResult[]>();
+  private searchCache = new BoundedCache<string, ProviderSearchResult[]>({
+    maxSize: 300,
+    ttlMs: 10 * 60 * 1000,
+  });
 
   constructor(options?: ProviderOptions) {
     super(options);
@@ -32,8 +35,9 @@ export class AnimeHubProvider extends AbstractProvider {
     if (!cleanQuery) return [];
 
     const cacheKey = cleanQuery.toLowerCase();
-    if (this.searchCache.has(cacheKey)) {
-      return this.searchCache.get(cacheKey)!;
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     try {
@@ -51,15 +55,22 @@ export class AnimeHubProvider extends AbstractProvider {
       const html = await res.text();
       const resultsMap = new Map<string, ProviderSearchResult>();
 
-      // Extract all items from film-list
-      const itemRegex =
-        /<div class="item">[\s\S]*?<a href="([^"]+)"[^>]*class="poster"[\s\S]*?(?:<span class="(dub|sub)">([^<]+)<\/span>)?[\s\S]*?<a [^>]*class="name">([^<]+)<\/a>/g;
-      let match: RegExpExecArray | null;
+      // Extract all items from film-list safely by chunking
+      const itemChunks = html.split(/<div\s+class=["']item["']/i);
+      for (let i = 1; i < itemChunks.length; i++) {
+        const chunk = itemChunks[i];
+        const hrefMatch =
+          chunk.match(/<a\s+href="([^"]+)"[^>]*class="poster"/i) ||
+          chunk.match(/<a\s+[^>]*class="poster"[^>]*href="([^"]+)"/i);
+        const nameMatch = chunk.match(
+          /<a\s+[^>]*class="name"[^>]*>([^<]+)<\/a>/i,
+        );
+        if (!hrefMatch || !nameMatch) continue;
 
-      while ((match = itemRegex.exec(html)) !== null) {
-        const rawHref = match[1];
-        const langClass = match[2]?.toLowerCase();
-        let name = match[4]?.trim() || "";
+        const rawHref = hrefMatch[1];
+        const langMatch = chunk.match(/<span\s+class="(dub|sub)"/i);
+        const langClass = langMatch ? langMatch[1].toLowerCase() : undefined;
+        let name = decodeHtmlEntities(nameMatch[1]).trim();
 
         let identifier = rawHref.replace(/^\/anime\//, "").replace(/\/$/, "");
         const isDub =
