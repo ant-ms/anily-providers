@@ -1,19 +1,24 @@
+import * as cheerio from "cheerio";
 import type {
   ProviderEpisodeList,
   ProviderSearchResult,
   StreamLanguage,
   StreamSource,
-  SubtitleTrack,
 } from "../types.js";
 import { AbstractProvider, type ProviderOptions } from "./base.js";
-import { getLogger } from "../utils/logger.js";
 import { getDefaultHeaders } from "../utils/headers.js";
 import { deobfuscateOtakuBlob } from "../utils/cipher.js";
 import { BoundedCache } from "../utils/cache.js";
 import { decodeHtmlEntities } from "../utils/html.js";
+import { parseSubtitles, type RawSubtitle } from "../utils/subtitles.js";
 
 const BASE_URL = "https://hianime.at";
 const DEFAULT_HEADERS = getDefaultHeaders();
+
+interface HiAnimeEmbedConfig {
+  src?: string;
+  subtitles?: RawSubtitle[];
+}
 
 export class HiAnimeProvider extends AbstractProvider {
   readonly id = "hianime";
@@ -23,7 +28,6 @@ export class HiAnimeProvider extends AbstractProvider {
     maxSize: 300,
     ttlMs: 10 * 60 * 1000,
   });
-  // Map identifier -> Map episodeNumber -> episodeId
   private episodeIdCache = new BoundedCache<string, Map<number, string>>({
     maxSize: 300,
     ttlMs: 30 * 60 * 1000,
@@ -34,127 +38,89 @@ export class HiAnimeProvider extends AbstractProvider {
   }
 
   async search(query: string): Promise<ProviderSearchResult[]> {
-    const log = getLogger();
-    const cleanQuery = query
-      .replace(/[^a-zA-Z0-9\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const cleanQuery = this.sanitizeQuery(query);
     if (!cleanQuery) return [];
 
     const cacheKey = cleanQuery.toLowerCase();
     const cached = this.searchCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+    if (cached) return cached;
 
-    try {
-      const url = `${BASE_URL}/search?keyword=${encodeURIComponent(cleanQuery)}`;
-      const res = await this.fetchFn(url, {
-        headers: DEFAULT_HEADERS,
-        signal: AbortSignal.timeout(this.timeoutMs),
+    const html = await this.fetchText(
+      `${BASE_URL}/search?keyword=${encodeURIComponent(cleanQuery)}`,
+      { headers: DEFAULT_HEADERS },
+    );
+
+    if (!html) return [];
+
+    const $ = cheerio.load(html);
+    const results: ProviderSearchResult[] = [];
+
+    $(".flw-item").each((_, el) => {
+      const item = $(el);
+      const link = item.find("h3.film-name a");
+      const href = link.attr("href");
+      const titleAttr = link.attr("title");
+      if (!href || !titleAttr) return;
+
+      const rawSlug = href.replace(/^.*\/([^/]+)$/, "$1");
+      const name = decodeHtmlEntities(titleAttr).trim();
+
+      const hasSub = item.find(".tick-sub").length > 0;
+      const hasDub = item.find(".tick-dub").length > 0;
+      const languages: StreamLanguage[] = [];
+      if (hasSub || (!hasSub && !hasDub)) languages.push("sub");
+      if (hasDub) languages.push("dub");
+
+      results.push({
+        identifier: rawSlug,
+        name,
+        languages,
       });
+    });
 
-      if (!res.ok) {
-        log.warn(
-          { status: res.status, query },
-          "HiAnime search request failed",
-        );
-        return [];
-      }
-
-      const html = await res.text();
-      const results: ProviderSearchResult[] = [];
-
-      // HiAnime returns search results with items
-      const items = html.split('class="flw-item');
-      for (let i = 1; i < items.length; i++) {
-        const chunk = items[i];
-        const nameMatch = chunk.match(
-          /<h3 class="film-name">\s*<a href="[^"]*\/([^"]+)"\s*title="([^"]+)"/,
-        );
-        if (!nameMatch) continue;
-
-        const rawSlug = nameMatch[1];
-        const name = decodeHtmlEntities(nameMatch[2]).trim();
-
-        const hasSub = chunk.includes("tick-sub");
-        const hasDub = chunk.includes("tick-dub");
-        const languages: StreamLanguage[] = [];
-        if (hasSub || (!hasSub && !hasDub)) languages.push("sub");
-        if (hasDub) languages.push("dub");
-
-        results.push({
-          identifier: rawSlug,
-          name,
-          languages,
-        });
-      }
-
-      this.searchCache.set(cacheKey, results);
-      return results;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error({ err: message, query }, "Error searching HiAnime");
-      return [];
-    }
+    this.searchCache.set(cacheKey, results);
+    return results;
   }
 
   async getEpisodes(
     identifier: string,
-    lang: StreamLanguage,
+    _lang: StreamLanguage,
   ): Promise<ProviderEpisodeList> {
-    const log = getLogger();
     const animeId = identifier.split("-").pop() || identifier;
-
-    try {
-      const url = `${BASE_URL}/api/theme/episode/list/${animeId}`;
-      const res = await this.fetchFn(url, {
+    const data = await this.fetchJson<{ html?: string }>(
+      `${BASE_URL}/api/theme/episode/list/${animeId}`,
+      {
         headers: {
           ...DEFAULT_HEADERS,
           Referer: `${BASE_URL}/watch/${identifier}`,
         },
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
+      },
+    );
 
-      if (!res.ok) {
-        return { episodes: [], servers: [] };
-      }
-
-      const data = (await res.json()) as { html?: string };
-      const html = data.html || "";
-
-      const epMatches = [
-        ...html.matchAll(/data-number="([^"]+)"[^>]*data-id="([0-9]+)"/g),
-      ];
-
-      const epMap = new Map<number, string>();
-      const episodes: number[] = [];
-
-      for (const m of epMatches) {
-        const epNum = parseFloat(m[1]);
-        const epId = m[2];
-        if (!isNaN(epNum)) {
-          epMap.set(epNum, epId);
-          episodes.push(epNum);
-        }
-      }
-
-      this.episodeIdCache.set(identifier, epMap);
-
-      episodes.sort((a, b) => a - b);
-
-      return {
-        episodes,
-        servers: [{ id: "zoko", name: "HD - ZokoAnime" }],
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error(
-        { err: message, identifier, lang },
-        "Failed to get episodes from HiAnime",
-      );
+    if (!data?.html) {
       return { episodes: [], servers: [] };
     }
+
+    const $ = cheerio.load(data.html);
+    const epMap = new Map<number, string>();
+    const episodes: number[] = [];
+
+    $("[data-number][data-id]").each((_, el) => {
+      const epNum = parseFloat($(el).attr("data-number") || "");
+      const epId = $(el).attr("data-id") || "";
+      if (!isNaN(epNum) && epId) {
+        epMap.set(epNum, epId);
+        episodes.push(epNum);
+      }
+    });
+
+    this.episodeIdCache.set(identifier, epMap);
+    episodes.sort((a, b) => a - b);
+
+    return {
+      episodes,
+      servers: [{ id: "zoko", name: "HD - ZokoAnime" }],
+    };
   }
 
   async getStream(
@@ -163,148 +129,98 @@ export class HiAnimeProvider extends AbstractProvider {
     lang: StreamLanguage,
     _server = "zoko",
   ): Promise<StreamSource | null> {
-    const log = getLogger();
+    const epId = await this.resolveEpisodeId(identifier, episode, lang);
+    if (!epId) return null;
+
+    const embedUrl = await this.resolveEmbedUrl(identifier, epId, lang);
+    if (!embedUrl) return null;
+
+    const config = await this.fetchEmbedConfig(embedUrl);
+    if (!config?.src) return null;
+
+    return {
+      url: config.src,
+      container: "hls",
+      headers: {
+        Referer: `${new URL(embedUrl).origin}/`,
+      },
+      serverName: "HD - ZokoAnime",
+      subtitles: parseSubtitles(config.subtitles),
+    };
+  }
+
+  private async resolveEpisodeId(
+    identifier: string,
+    episode: number,
+    lang: StreamLanguage,
+  ): Promise<string | null> {
     let epMap = this.episodeIdCache.get(identifier);
     if (!epMap || !epMap.has(episode)) {
       await this.getEpisodes(identifier, lang);
       epMap = this.episodeIdCache.get(identifier);
     }
+    return epMap?.get(episode) ?? null;
+  }
 
-    const epId = epMap?.get(episode);
-    if (!epId) {
-      log.warn({ identifier, episode }, "Episode ID not found in cache");
-      return null;
-    }
-
-    try {
-      const serversUrl = `${BASE_URL}/api/theme/episode/servers?episodeId=${epId}`;
-      const res = await this.fetchFn(serversUrl, {
+  private async resolveEmbedUrl(
+    identifier: string,
+    episodeId: string,
+    lang: StreamLanguage,
+  ): Promise<string | null> {
+    const data = await this.fetchJson<{ html?: string }>(
+      `${BASE_URL}/api/theme/episode/servers?episodeId=${episodeId}`,
+      {
         headers: {
           ...DEFAULT_HEADERS,
           Referer: `${BASE_URL}/watch/${identifier}`,
         },
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
+      },
+    );
 
-      if (!res.ok) {
-        log.warn(
-          { status: res.status, epId },
-          "HiAnime servers request failed",
-        );
-        return null;
+    if (!data?.html) return null;
+
+    const $ = cheerio.load(data.html);
+    const targetLang = lang.toLowerCase();
+
+    let chosenHash: string | undefined;
+
+    $(".server-item").each((_, el) => {
+      const item = $(el);
+      const type = (item.attr("data-type") || "").toLowerCase();
+      const serverName = (item.attr("data-server-name") || "").toLowerCase();
+      const hash = item.attr("data-hash");
+      if (type === targetLang && hash) {
+        if (serverName.includes("zoko") || !chosenHash) {
+          chosenHash = hash;
+        }
       }
+    });
 
-      const data = (await res.json()) as { html?: string };
-      const html = data.html || "";
+    if (!chosenHash) return null;
 
-      const serverItems = [
-        ...html.matchAll(
-          /class="[^"]*server-item[^"]*"[^>]*data-type="([^"]*)"[^>]*data-server-name="([^"]*)"[^>]*data-hash="([^"]*)"/g,
-        ),
-      ];
+    const embedUrl = Buffer.from(chosenHash, "base64").toString("utf8");
+    return embedUrl.startsWith("http") ? embedUrl : null;
+  }
 
-      // Find matching server by language and server name
-      const targetLang = lang.toLowerCase();
-      let chosen = serverItems.find(
-        (s) =>
-          s[1].toLowerCase() === targetLang &&
-          s[2].toLowerCase().includes("zoko"),
-      );
+  private async fetchEmbedConfig(
+    embedUrl: string,
+  ): Promise<HiAnimeEmbedConfig | null> {
+    const embedHtml = await this.fetchText(embedUrl, {
+      headers: {
+        ...DEFAULT_HEADERS,
+        Referer: `${BASE_URL}/`,
+      },
+    });
 
-      // Fallback: any server matching language with a hash
-      if (!chosen) {
-        chosen = serverItems.find(
-          (s) => s[1].toLowerCase() === targetLang && s[3],
-        );
-      }
+    if (!embedHtml) return null;
 
-      if (!chosen || !chosen[3]) {
-        log.warn(
-          { identifier, episode, lang },
-          "No valid server found on HiAnime",
-        );
-        return null;
-      }
+    const pMatch = embedHtml.match(/window\.__P\s*=\s*["']([^"']+)["']/);
+    if (!pMatch) return null;
 
-      const embedUrl = Buffer.from(chosen[3], "base64").toString("utf8");
-      if (!embedUrl.startsWith("http")) {
-        log.warn({ embedUrl }, "Decoded embed URL is invalid");
-        return null;
-      }
-
-      const embedRes = await this.fetchFn(embedUrl, {
-        headers: {
-          ...DEFAULT_HEADERS,
-          Referer: `${BASE_URL}/`,
-        },
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
-
-      if (!embedRes.ok) {
-        log.warn(
-          { status: embedRes.status, embedUrl },
-          "Failed to fetch embed page",
-        );
-        return null;
-      }
-
-      const embedHtml = await embedRes.text();
-      const pMatch = embedHtml.match(/window\.__P\s*=\s*["']([^"']+)["']/);
-      if (!pMatch) {
-        log.warn({ embedUrl }, "__P blob not found in embed page");
-        return null;
-      }
-
+    try {
       const decodedJson = deobfuscateOtakuBlob(pMatch[1]);
-      const config = JSON.parse(decodedJson) as {
-        src?: string;
-        subtitles?: Array<{
-          lang: string;
-          label: string;
-          src: string;
-          default?: boolean;
-        }>;
-      };
-
-      if (!config.src) {
-        log.warn({ config }, "Stream src not found in decoded embed config");
-        return null;
-      }
-
-      const embedOrigin = new URL(embedUrl).origin;
-
-      const subtitles: SubtitleTrack[] = (config.subtitles || [])
-        .filter(
-          (sub) =>
-            sub.src && sub.lang && sub.lang.toLowerCase() !== "thumbnails",
-        )
-        .map((sub) => {
-          const l = sub.lang.toLowerCase();
-          return {
-            label: sub.label || sub.lang,
-            language: l.startsWith("eng") || l === "en" ? "en" : l,
-            url: sub.src,
-            default: Boolean(
-              sub.default || l.includes("english") || l === "en",
-            ),
-          };
-        });
-
-      return {
-        url: config.src,
-        container: "hls",
-        headers: {
-          Referer: `${embedOrigin}/`,
-        },
-        serverName: "HD - ZokoAnime",
-        subtitles,
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error(
-        { err: message, identifier, episode, lang },
-        "Failed to resolve HiAnime stream",
-      );
+      return JSON.parse(decodedJson) as HiAnimeEmbedConfig;
+    } catch {
       return null;
     }
   }

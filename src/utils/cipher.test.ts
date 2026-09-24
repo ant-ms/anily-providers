@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  deobfuscateOtakuBlob,
-  obfuscateOtakuBlob,
-} from "../../src/utils/cipher.js";
+import { deobfuscateOtakuBlob, obfuscateOtakuBlob } from "./cipher.js";
 
 describe("cipher (otaku-embed XOR)", () => {
   it("encrypts and decrypts text correctly in a roundtrip", () => {

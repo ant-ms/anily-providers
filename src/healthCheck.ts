@@ -1,3 +1,4 @@
+import { Parser } from "m3u8-parser";
 import type { StreamSource } from "./types.js";
 import { getLogger } from "./utils/logger.js";
 import { DEFAULT_USER_AGENT } from "./utils/headers.js";
@@ -5,6 +6,13 @@ import { DEFAULT_USER_AGENT } from "./utils/headers.js";
 export interface ProbeOptions {
   timeoutMs?: number;
   fetchFn?: typeof fetch;
+}
+
+function parseM3u8Manifest(text: string) {
+  const parser = new Parser();
+  parser.push(text);
+  parser.end();
+  return parser.manifest;
 }
 
 /**
@@ -56,21 +64,13 @@ export async function probeStreamHealth(
 
     if (isM3U8) {
       const text = await res.text();
-      let mediaUrl = streamSource.url;
+      const manifest = parseM3u8Manifest(text);
 
-      // Handle Master Playlist -> Variant Playlist
-      if (text.includes("#EXT-X-STREAM-INF")) {
-        const lines = text.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].startsWith("#EXT-X-STREAM-INF")) {
-            const next = lines[i + 1]?.trim();
-            if (next && !next.startsWith("#")) {
-              mediaUrl = new URL(next, streamSource.url).toString();
-              break;
-            }
-          }
-        }
+      if (manifest.playlists && manifest.playlists.length > 0) {
+        const variantUri = manifest.playlists[0]?.uri;
+        if (!variantUri) return false;
 
+        const mediaUrl = new URL(variantUri, streamSource.url).toString();
         const variantRes = await customFetch(mediaUrl, {
           method: "GET",
           headers,
@@ -94,7 +94,6 @@ export async function probeStreamHealth(
           customFetch,
         );
       } else {
-        // Direct media playlist
         return await probeSegmentChunk(
           text,
           streamSource.url,
@@ -104,7 +103,6 @@ export async function probeStreamHealth(
         );
       }
     } else {
-      // Direct MP4 / non-HLS container: probe first bytes
       const probeRes = await customFetch(streamSource.url, {
         method: "GET",
         headers: {
@@ -136,17 +134,23 @@ async function probeSegmentChunk(
   customFetch: typeof fetch,
 ): Promise<boolean> {
   const log = getLogger();
-  const segLine = playlistText.split("\n").find((l) => {
-    const t = l.trim();
-    return t.length > 0 && !t.startsWith("#");
-  });
+  const manifest = parseM3u8Manifest(playlistText);
+  const firstSegUri =
+    manifest.segments?.[0]?.uri ||
+    playlistText
+      .split("\n")
+      .find((l) => {
+        const t = l.trim();
+        return t.length > 0 && !t.startsWith("#");
+      })
+      ?.trim();
 
-  if (!segLine) {
+  if (!firstSegUri) {
     log.debug({ baseUrl }, "No media segment found in playlist");
     return false;
   }
 
-  const segUrl = new URL(segLine.trim(), baseUrl).toString();
+  const segUrl = new URL(firstSegUri, baseUrl).toString();
 
   try {
     const segRes = await customFetch(segUrl, {

@@ -1,13 +1,10 @@
-// Core types
 export * from "./types.js";
 
-// Providers
 export { AbstractProvider, type ProviderOptions } from "./providers/base.js";
 export { AnimeHubProvider } from "./providers/animehub.js";
 export { HiAnimeProvider } from "./providers/hianime.js";
 export { JustAnimeProvider } from "./providers/justanime.js";
 
-// Registry
 export {
   ProviderRegistry,
   registry,
@@ -15,7 +12,6 @@ export {
   type CheckAvailabilityOptions,
 } from "./registry.js";
 
-// Quality scoring
 export {
   getServiceScore,
   SCORE_WEIGHT_MEGAPLAY,
@@ -26,12 +22,14 @@ export {
   SCORE_WEIGHT_JUSTANIME,
   SCORE_WEIGHT_HIANIME,
   PENALTY_THROTTLED_SERVERS,
+  DEFAULT_PROVIDER_WEIGHTS,
+  DEFAULT_SERVER_RULES,
+  type ServerScoringRule,
+  type QualityScoreOptions,
 } from "./qualityScore.js";
 
-// Health check probe
 export { probeStreamHealth, type ProbeOptions } from "./healthCheck.js";
 
-// Title matching & season parsing
 export {
   matchBestSearchResult,
   callOpenRouterFallback,
@@ -40,9 +38,13 @@ export {
   type TitleMatcherOptions,
 } from "./titleMatcher.js";
 
-// Utilities
 export { deobfuscateOtakuBlob, obfuscateOtakuBlob } from "./utils/cipher.js";
 export { DEFAULT_USER_AGENT, getDefaultHeaders } from "./utils/headers.js";
 export { setLogger, getLogger, nullLogger } from "./utils/logger.js";
 export { BoundedCache, type CacheOptions } from "./utils/cache.js";
 export { decodeHtmlEntities } from "./utils/html.js";
+export {
+  parseSubtitles,
+  normalizeLanguageCode,
+  type RawSubtitle,
+} from "./utils/subtitles.js";

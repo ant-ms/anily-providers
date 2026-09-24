@@ -1,6 +1,7 @@
 import type {
   AvailableService,
   BaseProvider,
+  ProviderSearchResult,
   StreamLanguage,
   StreamSource,
   TitleMatcherFn,
@@ -35,7 +36,6 @@ export class ProviderRegistry {
         this.register(p);
       }
     } else {
-      // Default built-in providers
       this.register(new AnimeHubProvider());
       this.register(new HiAnimeProvider());
       this.register(new JustAnimeProvider());
@@ -58,9 +58,6 @@ export class ProviderRegistry {
     return Array.from(this.providers.values());
   }
 
-  /**
-   * Check which providers and servers have the given episode available.
-   */
   async checkAvailability(
     titles: string[],
     episodeNumber: number,
@@ -80,12 +77,18 @@ export class ProviderRegistry {
       providers.map(async (provider) => {
         try {
           const providerCheck = async () => {
-            // Find matching identifier in this provider
             let matchedIdentifier: string | null = null;
             let matchedLanguages: StreamLanguage[] = ["sub"];
 
-            for (const title of validTitles) {
-              const searchResults = await provider.search(title);
+            const searches = await Promise.all(
+              validTitles.map((title) =>
+                provider
+                  .search(title)
+                  .catch(() => [] as ProviderSearchResult[]),
+              ),
+            );
+
+            for (const searchResults of searches) {
               if (searchResults.length > 0) {
                 const match = await this.titleMatcher(
                   validTitles,
@@ -102,48 +105,51 @@ export class ProviderRegistry {
 
             if (!matchedIdentifier) return;
 
-            // Check availability for each language supported, prioritizing sub then dub
             const sortedLanguages = Array.from(new Set(matchedLanguages)).sort(
               (a, b) => (a === "sub" ? -1 : 1),
             );
 
-            for (const lang of sortedLanguages) {
-              const { episodes, servers } = await provider.getEpisodes(
-                matchedIdentifier,
-                lang,
-              );
+            await Promise.all(
+              sortedLanguages.map(async (lang) => {
+                const { episodes, servers } = await provider.getEpisodes(
+                  matchedIdentifier!,
+                  lang,
+                );
 
-              // Check if episode number exists in episodes list
-              if (episodes.includes(episodeNumber)) {
-                for (const server of servers) {
-                  results.push({
-                    providerId: provider.id,
-                    providerName: provider.name,
-                    serverName: server.name,
-                    serverId: server.id,
-                    language: lang,
-                    identifier: matchedIdentifier,
-                  });
+                if (episodes.includes(episodeNumber)) {
+                  for (const server of servers) {
+                    results.push({
+                      providerId: provider.id,
+                      providerName: provider.name,
+                      serverName: server.name,
+                      serverId: server.id,
+                      language: lang,
+                      identifier: matchedIdentifier!,
+                    });
+                  }
                 }
-              }
-            }
+              }),
+            );
           };
 
           if (options?.timeoutMs && options.timeoutMs > 0) {
-            await Promise.race([
-              providerCheck(),
-              new Promise<void>((_, reject) =>
-                setTimeout(
-                  () =>
-                    reject(
-                      new Error(
-                        `Provider check timed out after ${options.timeoutMs}ms`,
-                      ),
+            let timer: NodeJS.Timeout | undefined;
+            const timeoutPromise = new Promise<void>((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      `Provider check timed out after ${options.timeoutMs}ms`,
                     ),
-                  options.timeoutMs,
-                ),
-              ),
-            ]);
+                  ),
+                options.timeoutMs,
+              );
+            });
+            try {
+              await Promise.race([providerCheck(), timeoutPromise]);
+            } finally {
+              if (timer) clearTimeout(timer);
+            }
           } else {
             await providerCheck();
           }
@@ -157,7 +163,6 @@ export class ProviderRegistry {
       }),
     );
 
-    // Prioritize fastest, verified reliable HD servers first
     results.sort((a, b) => {
       const scoreDiff = getServiceScore(b) - getServiceScore(a);
       if (scoreDiff !== 0) return scoreDiff;
@@ -167,9 +172,6 @@ export class ProviderRegistry {
     return results;
   }
 
-  /**
-   * Resolve a stream for a specific service.
-   */
   async resolveStream(
     providerId: string,
     identifier: string,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { probeStreamHealth } from "../../src/healthCheck.js";
+import { probeStreamHealth } from "./healthCheck.js";
 
 describe("healthCheck", () => {
   it("returns false for null or empty url", async () => {
@@ -18,7 +18,7 @@ variant.m3u8`;
 #EXTINF:4.000,
 segment_0.ts`;
 
-    const dummyChunk = new Uint8Array([0x47, 0x40, 0x00, 0x10]).buffer; // TS sync byte
+    const dummyChunk = new Uint8Array([0x47, 0x40, 0x00, 0x10]).buffer;
 
     const mockFetch: typeof fetch = async (input, init) => {
       const url = String(input);
@@ -89,7 +89,6 @@ chunk.ts`;
           headers: { "content-range": "bytes 0-499/500000" },
         });
       }
-      // Initial probe without range header
       return new Response(null, { status: 200 });
     };
 

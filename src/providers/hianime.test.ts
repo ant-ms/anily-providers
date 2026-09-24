@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { HiAnimeProvider } from "../../src/providers/hianime.js";
-import { obfuscateOtakuBlob } from "../../src/utils/cipher.js";
+import { HiAnimeProvider } from "./hianime.js";
+import { obfuscateOtakuBlob } from "../utils/cipher.js";
 
 describe("HiAnimeProvider (Unit)", () => {
   it("searches and parses HTML results", async () => {

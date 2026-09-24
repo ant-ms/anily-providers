@@ -30,6 +30,7 @@ export interface AvailableService {
   serverId: string;
   language: StreamLanguage;
   identifier: string;
+  scoreBonus?: number;
 }
 
 export interface ProviderEpisodeList {

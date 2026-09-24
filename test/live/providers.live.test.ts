@@ -33,7 +33,6 @@ describe("Live Provider Health & Upstream Verification", () => {
       expect(stream).not.toBeNull();
       expect(stream?.url).toContain("http");
 
-      // Verify stream is actively delivering video segments
       const isHealthy = await probeStreamHealth(stream!, 4000);
       expect(isHealthy).toBe(true);
     }, 20000);
@@ -104,11 +103,9 @@ describe("Live Provider Health & Upstream Verification", () => {
 
       expect(services.length).toBeGreaterThan(0);
 
-      // Verify top server is a high-speed CDN (MegaPlay or ZokoAnime)
       const topService = services[0];
       expect(topService.serverName.toLowerCase()).toMatch(/megaplay|zoko/);
 
-      // Verify stream resolves from top service
       const stream = await registry.resolveStream(
         topService.providerId,
         topService.identifier,

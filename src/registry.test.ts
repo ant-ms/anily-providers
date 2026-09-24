@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ProviderRegistry } from "../../src/registry.js";
+import { ProviderRegistry } from "./registry.js";
 import type {
   BaseProvider,
   ProviderSearchResult,
   StreamLanguage,
-} from "../../src/types.js";
+} from "./types.js";
 
 describe("ProviderRegistry (Unit)", () => {
   const createMockProvider = (
@@ -56,7 +56,6 @@ describe("ProviderRegistry (Unit)", () => {
     const services = await registry.checkAvailability(["Frieren"], 1);
 
     expect(services.length).toBeGreaterThan(0);
-    // Highest quality score (MegaPlay) should be ranked first
     expect(services[0].serverName).toContain("MegaPlay");
     expect(services[services.length - 1].serverName).toContain("F5 - HQ");
   });
@@ -110,7 +109,6 @@ describe("ProviderRegistry (Unit)", () => {
       id: "slow",
       name: "Slow",
       search: async () => {
-        // Simulates stalled request
         await new Promise((resolve) => setTimeout(resolve, 500));
         return [{ identifier: "slow-id", name: "Frieren", languages: ["sub"] }];
       },
@@ -125,12 +123,10 @@ describe("ProviderRegistry (Unit)", () => {
       providers: [fastProvider, hangingProvider],
     });
 
-    // Run with 50ms timeout
     const services = await registry.checkAvailability(["Frieren"], 1, {
       timeoutMs: 50,
     });
 
-    // Fast provider should have resolved, slow provider should have timed out
     expect(services.some((s) => s.providerId === "fast")).toBe(true);
     expect(services.some((s) => s.providerId === "slow")).toBe(false);
   });

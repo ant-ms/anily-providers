@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  DEFAULT_USER_AGENT,
-  getDefaultHeaders,
-} from "../../src/utils/headers.js";
+import { DEFAULT_USER_AGENT, getDefaultHeaders } from "./headers.js";
 
 describe("headers", () => {
   it("provides standard user agent", () => {

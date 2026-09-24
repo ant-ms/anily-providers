@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { JustAnimeProvider } from "../../src/providers/justanime.js";
+import { JustAnimeProvider } from "./justanime.js";
 
 describe("JustAnimeProvider (Unit)", () => {
   it("searches and parses anime results correctly", async () => {
@@ -39,7 +39,6 @@ describe("JustAnimeProvider (Unit)", () => {
     expect(results[0].name).toBe("Sousou no Frieren");
     expect(results[0].languages).toEqual(["sub", "dub"]);
 
-    // Test in-memory cache: second search should not trigger fetch
     const cachedResults = await provider.search("frieren");
     expect(cachedResults).toEqual(results);
     expect(fetchCount).toBe(1);
@@ -125,7 +124,6 @@ describe("JustAnimeProvider (Unit)", () => {
     expect(stream?.container).toBe("hls");
     expect(stream?.serverName).toContain("MegaPlay");
 
-    // Thumbnails subtitle should be filtered out
     expect(stream?.subtitles).toHaveLength(3);
     expect(stream?.subtitles?.[0]).toEqual({
       label: "English",

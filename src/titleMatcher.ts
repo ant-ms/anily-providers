@@ -11,30 +11,40 @@ export function normalizeTitle(str: string): string {
     .trim();
 }
 
+const ROMAN_NUMERALS: Record<string, number> = {
+  i: 1,
+  ii: 2,
+  iii: 3,
+  iv: 4,
+  v: 5,
+  vi: 6,
+  vii: 7,
+  viii: 8,
+  ix: 9,
+  x: 10,
+  xi: 11,
+  xii: 12,
+};
+
 export function extractSeasonNumber(title: string): number | null {
   const t = title.toLowerCase();
+
   const m1 = t.match(/\b(?:season|s)\s*([0-9]+)\b/);
   if (m1) return parseInt(m1[1], 10);
+
   const m2 = t.match(/\b([0-9]+)(?:st|nd|rd|th)\s+season\b/);
   if (m2) return parseInt(m2[1], 10);
-  if (
-    t.includes("2nd season") ||
-    t.includes("season 2") ||
-    /\b(?:season\s+)?ii\b/i.test(t)
-  )
-    return 2;
-  if (
-    t.includes("3rd season") ||
-    t.includes("season 3") ||
-    /\b(?:season\s+)?iii\b/i.test(t)
-  )
-    return 3;
-  if (
-    t.includes("4th season") ||
-    t.includes("season 4") ||
-    /\b(?:season\s+)?iv\b/i.test(t)
-  )
-    return 4;
+
+  const mSeasonRoman = t.match(/\bseason\s+([ivx]+)\b/);
+  if (mSeasonRoman && ROMAN_NUMERALS[mSeasonRoman[1]]) {
+    return ROMAN_NUMERALS[mSeasonRoman[1]];
+  }
+
+  const mRoman = t.match(/\b(ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii)\b/);
+  if (mRoman && ROMAN_NUMERALS[mRoman[1]]) {
+    return ROMAN_NUMERALS[mRoman[1]];
+  }
+
   return null;
 }
 
@@ -116,6 +126,12 @@ Reply with ONLY the index number (e.g. "0" or "1") or "NONE".`;
   return null;
 }
 
+/**
+ * Resolves the best matching anime result through a three-tier hierarchy:
+ * 1. Normalized exact title comparison
+ * 2. LLM fallback (OpenRouter or user-injected semantic matcher)
+ * 3. Heuristic similarity scoring (season weighting, special/OVA penalties, substring distance)
+ */
 export async function matchBestSearchResult(
   targetTitles: string[],
   searchResults: ProviderSearchResult[],
@@ -138,7 +154,6 @@ export async function matchBestSearchResult(
     season: extractSeasonNumber(t),
   }));
 
-  // 1. Exact normalized match
   for (const target of cleanTargets) {
     const exact = searchResults.find(
       (r) => normalizeTitle(r.name) === target.norm,
@@ -146,7 +161,6 @@ export async function matchBestSearchResult(
     if (exact) return exact;
   }
 
-  // 2. Custom or OpenRouter LLM fallback
   if (options?.customLlmMatcher) {
     try {
       const customMatch = await options.customLlmMatcher(
@@ -154,9 +168,7 @@ export async function matchBestSearchResult(
         searchResults,
       );
       if (customMatch) return customMatch;
-    } catch {
-      // Fallback to heuristics
-    }
+    } catch {}
   } else if (options?.openRouterApiKey || process.env.OPENROUTER_API_KEY) {
     const llmMatch = await callOpenRouterFallback(
       cleanTargets[0].original,
@@ -167,9 +179,8 @@ export async function matchBestSearchResult(
     if (llmMatch) return llmMatch;
   }
 
-  // 3. Heuristic matching
   const primary = cleanTargets[0];
-  const targetSeason = primary.season ?? 1; // Default to season 1 if not specified
+  const targetSeason = primary.season ?? 1;
 
   let bestMatch: ProviderSearchResult | null = null;
   let bestScore = -Infinity;
@@ -185,19 +196,16 @@ export async function matchBestSearchResult(
       primary.original,
     );
 
-    // Matching season gets a huge boost, but specials/movies don't get the TV season boost
     if (!isSpecial && candSeason === targetSeason) {
       score += 50;
     } else if (candSeason !== targetSeason) {
-      score -= 50; // Penalty for wrong season
+      score -= 50;
     }
 
-    // Penalize movies/OVAs if target doesn't ask for them
     if (isSpecial && !targetIsSpecial) {
       score -= 60;
     }
 
-    // Check substring overlap
     if (candNorm.includes(primary.norm) || primary.norm.includes(candNorm)) {
       score += 30;
       const lenDiff = Math.abs(candNorm.length - primary.norm.length);

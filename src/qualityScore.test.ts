@@ -9,8 +9,8 @@ import {
   SCORE_WEIGHT_JUSTANIME,
   SCORE_WEIGHT_HIANIME,
   PENALTY_THROTTLED_SERVERS,
-} from "../../src/qualityScore.js";
-import type { AvailableService } from "../../src/types.js";
+} from "./qualityScore.js";
+import type { AvailableService } from "./types.js";
 
 describe("qualityScore", () => {
   it("prioritizes MegaPlay over ZokoAnime", () => {
@@ -146,5 +146,31 @@ describe("qualityScore", () => {
     expect(getServiceScore(justAnime)).toBe(SCORE_WEIGHT_JUSTANIME);
     expect(getServiceScore(hiAnime)).toBe(SCORE_WEIGHT_HIANIME);
     expect(getServiceScore(unknown)).toBe(0);
+  });
+
+  it("supports scoreBonus and custom rule overrides", () => {
+    const customService: AvailableService = {
+      providerId: "custom-provider",
+      providerName: "Custom",
+      serverId: "fast-mirror",
+      serverName: "Fast Mirror",
+      language: "sub",
+      identifier: "1",
+      scoreBonus: 15,
+    };
+
+    expect(getServiceScore(customService)).toBe(15);
+
+    const withCustomRules = getServiceScore(customService, {
+      providerWeights: { "custom-provider": 10 },
+      serverRules: [
+        {
+          match: (name) => name.includes("fast"),
+          weight: 5,
+        },
+      ],
+    });
+
+    expect(withCustomRules).toBe(15 + 10 + 5);
   });
 });

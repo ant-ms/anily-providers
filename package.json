@@ -44,8 +44,14 @@
   ],
   "license": "MIT",
   "author": "Yanik Ammann <yanik@ant.ms>",
-  "dependencies": {},
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "html-entities": "^2.6.0",
+    "lru-cache": "^11.5.3",
+    "m3u8-parser": "^7.2.0"
+  },
   "devDependencies": {
+    "@types/m3u8-parser": "^7.2.6",
     "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.9",
     "dotenv": "^17.4.2",

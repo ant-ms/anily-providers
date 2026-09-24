@@ -3,8 +3,8 @@ import {
   extractSeasonNumber,
   matchBestSearchResult,
   normalizeTitle,
-} from "../../src/titleMatcher.js";
-import type { ProviderSearchResult } from "../../src/types.js";
+} from "./titleMatcher.js";
+import type { ProviderSearchResult } from "./types.js";
 
 describe("titleMatcher", () => {
   describe("normalizeTitle", () => {
@@ -25,6 +25,10 @@ describe("titleMatcher", () => {
       expect(extractSeasonNumber("Re:Zero 2nd Season")).toBe(2);
       expect(extractSeasonNumber("Overlord IV")).toBe(4);
       expect(extractSeasonNumber("Boku no Hero Academia 3rd Season")).toBe(3);
+      expect(extractSeasonNumber("Kingdom 5th Season")).toBe(5);
+      expect(extractSeasonNumber("Date A Live V")).toBe(5);
+      expect(extractSeasonNumber("My Hero Academia Season 7")).toBe(7);
+      expect(extractSeasonNumber("Sword Art Online Season I")).toBe(1);
       expect(extractSeasonNumber("Frieren")).toBeNull();
     });
   });
@@ -77,9 +81,8 @@ describe("titleMatcher", () => {
     it("penalizes movies when looking for TV series", async () => {
       const match = await matchBestSearchResult(
         ["Sousou no Frieren"],
-        [candidates[1], candidates[2]], // S2 vs Movie (no S1 candidate)
+        [candidates[1], candidates[2]],
       );
-      // Even though S2 has season penalty, movie has special penalty (-40)
       expect(match?.identifier).toBe("frieren-s2");
     });
 
@@ -94,7 +97,7 @@ describe("titleMatcher", () => {
     });
 
     it("supports custom LLM matcher injection", async () => {
-      const customMatcher = async () => candidates[2]; // returns movie explicitly
+      const customMatcher = async () => candidates[2];
       const match = await matchBestSearchResult(["Any Title"], candidates, {
         customLlmMatcher: customMatcher,
       });
@@ -129,7 +132,6 @@ describe("titleMatcher", () => {
     it("handles OpenRouter fallback returning NONE or errors gracefully", async () => {
       const originalFetch = globalThis.fetch;
       try {
-        // Test NONE response
         globalThis.fetch = async () =>
           new Response(
             JSON.stringify({
@@ -143,10 +145,8 @@ describe("titleMatcher", () => {
           candidates,
           { openRouterApiKey: "test-api-key" },
         );
-        // Normalized match will still match S1
         expect(matchNone?.identifier).toBe("frieren-s1");
 
-        // Test HTTP error response
         globalThis.fetch = async () =>
           new Response("Internal Server Error", { status: 500 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { AnimeHubProvider } from "../../src/providers/animehub.js";
+import { AnimeHubProvider } from "./animehub.js";
 
 describe("AnimeHubProvider (Unit)", () => {
   it("searches and parses HTML results with sub/dub tags", async () => {
@@ -24,7 +24,6 @@ describe("AnimeHubProvider (Unit)", () => {
     const provider = new AnimeHubProvider({ fetchFn: mockFetch });
     const results = await provider.search("frieren");
 
-    // Results should be merged by identifier
     expect(results).toHaveLength(1);
     expect(results[0].identifier).toBe("sousou-no-frieren");
     expect(results[0].name).toBe("Sousou no Frieren");

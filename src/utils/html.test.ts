@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decodeHtmlEntities } from "../../src/utils/html.js";
+import { decodeHtmlEntities } from "./html.js";
 
 describe("decodeHtmlEntities", () => {
   it("decodes named entities correctly", () => {
@@ -27,6 +27,12 @@ describe("decodeHtmlEntities", () => {
     expect(decodeHtmlEntities("Anime &#x27;Title&#x27;")).toBe("Anime 'Title'");
     expect(decodeHtmlEntities("&#x22;Double Quote&#x22;")).toBe(
       '"Double Quote"',
+    );
+  });
+
+  it("decodes HTML5 extended entities", () => {
+    expect(decodeHtmlEntities("Loading&hellip; &copy; 2026 &trade;")).toBe(
+      "Loading… © 2026 ™",
     );
   });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { getLogger, setLogger, nullLogger } from "../../src/utils/logger.js";
-import type { Logger } from "../../src/types.js";
+import { getLogger, setLogger, nullLogger } from "./logger.js";
+import type { Logger } from "../types.js";
 
 describe("logger", () => {
   it("defaults to nullLogger which no-ops safely", () => {
@@ -32,7 +32,6 @@ describe("logger", () => {
     logger.warn("Warning");
     expect(customLogger.warn).toHaveBeenCalledWith("Warning");
 
-    // Reset logger after test
     setLogger(null);
     expect(getLogger()).toBe(nullLogger);
   });

@@ -1,74 +1,52 @@
+import { LRUCache } from "lru-cache";
+
 export interface CacheOptions {
   maxSize?: number;
   ttlMs?: number;
 }
 
-interface CacheEntry<V> {
-  value: V;
-  expiresAt: number;
-}
-
 /**
- * High-performance, bounded LRU (Least Recently Used) cache with optional TTL.
+ * High-performance, bounded LRU (Least Recently Used) cache powered by lru-cache.
  * Avoids unbounded memory growth in long-running services.
  */
-export class BoundedCache<K, V> {
-  private map = new Map<K, CacheEntry<V>>();
-  private readonly maxSize: number;
-  private readonly defaultTtlMs: number;
+export class BoundedCache<K extends {} = string, V extends {} = any> {
+  private cache: LRUCache<K, V>;
 
   constructor(options?: CacheOptions) {
-    this.maxSize = Math.max(1, options?.maxSize ?? 250);
-    this.defaultTtlMs = options?.ttlMs ?? 0; // 0 = no expiration
+    this.cache = new LRUCache<K, V>({
+      max: Math.max(1, options?.maxSize ?? 250),
+      ttl: options?.ttlMs ?? 0,
+      ttlResolution: 0,
+      perf: { now: () => Date.now() },
+    });
   }
 
   get(key: K): V | undefined {
-    const entry = this.map.get(key);
-    if (!entry) return undefined;
-
-    if (entry.expiresAt !== Infinity && Date.now() > entry.expiresAt) {
-      this.map.delete(key);
-      return undefined;
-    }
-
-    // Refresh recency for LRU
-    this.map.delete(key);
-    this.map.set(key, entry);
-
-    return entry.value;
+    return this.cache.get(key);
   }
 
   set(key: K, value: V, customTtlMs?: number): this {
-    if (this.map.has(key)) {
-      this.map.delete(key);
-    } else if (this.map.size >= this.maxSize) {
-      // Evict oldest (least recently used)
-      const oldestKey = this.map.keys().next().value;
-      if (oldestKey !== undefined) {
-        this.map.delete(oldestKey);
-      }
-    }
-
-    const ttl = customTtlMs ?? this.defaultTtlMs;
-    const expiresAt = ttl > 0 ? Date.now() + ttl : Infinity;
-
-    this.map.set(key, { value, expiresAt });
+    this.cache.set(
+      key,
+      value,
+      customTtlMs !== undefined ? { ttl: customTtlMs } : undefined,
+    );
     return this;
   }
 
   has(key: K): boolean {
-    return this.get(key) !== undefined;
+    return this.cache.has(key);
   }
 
   delete(key: K): boolean {
-    return this.map.delete(key);
+    return this.cache.delete(key);
   }
 
   clear(): void {
-    this.map.clear();
+    this.cache.clear();
   }
 
   get size(): number {
-    return this.map.size;
+    return this.cache.size;
   }
 }

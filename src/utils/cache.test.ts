@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { BoundedCache } from "../../src/utils/cache.js";
+import { BoundedCache } from "./cache.js";
 
 describe("BoundedCache", () => {
   it("stores and retrieves items", () => {
@@ -20,10 +20,7 @@ describe("BoundedCache", () => {
     cache.set("first", "1");
     cache.set("second", "2");
 
-    // Access "first" so "second" becomes LRU
     cache.get("first");
-
-    // Insert third item -> "second" should be evicted
     cache.set("third", "3");
 
     expect(cache.get("first")).toBe("1");
@@ -40,7 +37,6 @@ describe("BoundedCache", () => {
 
       expect(cache.get("temp")).toBe("value");
 
-      // Advance time beyond TTL
       vi.advanceTimersByTime(1500);
 
       expect(cache.get("temp")).toBeUndefined();
