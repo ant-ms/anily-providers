@@ -1,6 +1,6 @@
 {
   "name": "@ant.ms/anily-providers",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "High-reliability anime streaming provider resolvers, scrapers, and stream quality verifiers for Anily",
   "type": "module",
   "main": "dist/index.cjs",
