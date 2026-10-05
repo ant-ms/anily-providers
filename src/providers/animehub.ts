@@ -9,9 +9,17 @@ import { AbstractProvider, type ProviderOptions } from "./base.js";
 import { getDefaultHeaders } from "../utils/headers.js";
 import { BoundedCache } from "../utils/cache.js";
 import { decodeHtmlEntities } from "../utils/html.js";
+import { deobfuscateOtakuBlob } from "../utils/cipher.js";
+import { parseSubtitles, type RawSubtitle } from "../utils/subtitles.js";
 
 const BASE_URL = "https://123animehub.cc";
+const ZOKO_BASE = "https://zokoanime.video";
 const DEFAULT_HEADERS = getDefaultHeaders();
+
+interface AnimeHubEmbedConfig {
+  src?: string;
+  subtitles?: RawSubtitle[];
+}
 
 export class AnimeHubProvider extends AbstractProvider {
   readonly id = "animehub";
@@ -156,23 +164,96 @@ export class AnimeHubProvider extends AbstractProvider {
       const embedUrl = await this.fetchEmbedUrl(slug, episode, s, animeUrl);
       if (!embedUrl) continue;
 
-      const token = await this.fetchZrToken(embedUrl, animeUrl);
-      if (!token) continue;
+      const embedHtml = await this.fetchText(embedUrl, {
+        headers: {
+          ...DEFAULT_HEADERS,
+          Referer: animeUrl,
+        },
+      });
 
-      const targetBase = new URL(embedUrl).origin;
-      const streamUrl = await this.fetchSourcesUrl(targetBase, token, embedUrl);
-      if (!streamUrl) continue;
+      if (!embedHtml) continue;
 
-      return {
-        url: streamUrl,
-        container: "hls",
-        headers: { Referer: `${targetBase}/` },
-        serverName:
-          s === "0" ? "F5 - HQ" : s === "10" ? "No Ads 4" : `Server ${s}`,
-      };
+      // 1. New Player: Extract iframe src containing stream parameters (e.g. /stream/mal/{malId})
+      const $ = cheerio.load(embedHtml);
+      const iframeSrc =
+        $("iframe#playerIframe").attr("src") || $("iframe").attr("src");
+
+      if (iframeSrc) {
+        const malMatch = iframeSrc.match(/\/stream\/mal\/(\d+)/i);
+        if (malMatch) {
+          const malId = malMatch[1];
+          const zokoStream = await this.fetchZokoStream(malId, episode, lang);
+          if (zokoStream) {
+            return {
+              ...zokoStream,
+              serverName:
+                s === "0" ? "F5 - HQ" : s === "10" ? "No Ads 4" : `Server ${s}`,
+            };
+          }
+        }
+      }
+
+      // 2. Legacy Player: Token extraction via var zrpart2
+      const tokenMatch = embedHtml.match(
+        /var\s+zrpart2\s*=\s*["']([^"']+)["']/,
+      );
+      if (tokenMatch) {
+        const token = tokenMatch[1];
+        const targetBase = new URL(embedUrl).origin;
+        const streamUrl = await this.fetchSourcesUrl(
+          targetBase,
+          token,
+          embedUrl,
+        );
+        if (streamUrl) {
+          return {
+            url: streamUrl,
+            container: "hls",
+            headers: { Referer: `${targetBase}/` },
+            serverName:
+              s === "0" ? "F5 - HQ" : s === "10" ? "No Ads 4" : `Server ${s}`,
+          };
+        }
+      }
     }
 
     return null;
+  }
+
+  private async fetchZokoStream(
+    malId: string,
+    episode: number,
+    lang: StreamLanguage,
+  ): Promise<StreamSource | null> {
+    const targetUrl = `${ZOKO_BASE}/stream/mal/${malId}/${episode}/${lang}`;
+    const html = await this.fetchText(targetUrl, {
+      headers: {
+        ...DEFAULT_HEADERS,
+        Referer: `${ZOKO_BASE}/`,
+      },
+    });
+
+    if (!html) return null;
+
+    const pMatch = html.match(/window\.__P\s*=\s*["']([^"']+)["']/);
+    if (!pMatch) return null;
+
+    try {
+      const decodedJson = deobfuscateOtakuBlob(pMatch[1]);
+      const config = JSON.parse(decodedJson) as AnimeHubEmbedConfig;
+      if (!config?.src) return null;
+
+      return {
+        url: config.src,
+        container: "hls",
+        headers: {
+          Referer: `${ZOKO_BASE}/`,
+        },
+        subtitles: parseSubtitles(config.subtitles),
+      };
+    } catch {
+      return null;
+    }
   }
 
   private async fetchEmbedUrl(
@@ -191,22 +272,6 @@ export class AnimeHubProvider extends AbstractProvider {
       },
     );
     return data?.target ?? null;
-  }
-
-  private async fetchZrToken(
-    embedUrl: string,
-    animeUrl: string,
-  ): Promise<string | null> {
-    const html = await this.fetchText(embedUrl, {
-      headers: {
-        ...DEFAULT_HEADERS,
-        Referer: animeUrl,
-      },
-    });
-    if (!html) return null;
-
-    const match = html.match(/var\s+zrpart2\s*=\s*["']([^"']+)["']/);
-    return match?.[1] ?? null;
   }
 
   private async fetchSourcesUrl(

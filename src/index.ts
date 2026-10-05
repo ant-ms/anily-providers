@@ -4,6 +4,7 @@ export { AbstractProvider, type ProviderOptions } from "./providers/base.js";
 export { AnimeHubProvider } from "./providers/animehub.js";
 export { HiAnimeProvider } from "./providers/hianime.js";
 export { JustAnimeProvider } from "./providers/justanime.js";
+export { ZokoAnimeProvider } from "./providers/zokoanime.js";
 
 export {
   ProviderRegistry,
@@ -19,6 +20,7 @@ export {
   SCORE_WEIGHT_1080P,
   SCORE_WEIGHT_720P,
   SCORE_WEIGHT_GENERIC_HD,
+  SCORE_WEIGHT_ZOKOANIME_PROVIDER,
   SCORE_WEIGHT_JUSTANIME,
   SCORE_WEIGHT_HIANIME,
   PENALTY_THROTTLED_SERVERS,

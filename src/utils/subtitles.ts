@@ -44,29 +44,54 @@ export interface RawSubtitle {
 export function parseSubtitles(rawSubs?: RawSubtitle[]): SubtitleTrack[] {
   if (!rawSubs || !Array.isArray(rawSubs)) return [];
 
-  return rawSubs
-    .filter((sub) => {
-      const url = sub.file || sub.src;
-      const isThumbnail =
-        sub.kind === "thumbnails" ||
-        (sub.lang && sub.lang.toLowerCase() === "thumbnails");
-      return Boolean(url && !isThumbnail);
-    })
-    .map((sub) => {
-      const url = (sub.file || sub.src)!;
-      const rawLabel = sub.label || sub.lang || "English";
-      const language = normalizeLanguageCode(sub.lang || sub.label || "en");
-      const isDefault = Boolean(
-        sub.default ||
-        rawLabel.toLowerCase().includes("english") ||
-        language === "en",
-      );
+  const filtered = rawSubs.filter((sub) => {
+    const url = sub.file || sub.src;
+    const isThumbnail =
+      sub.kind === "thumbnails" ||
+      (sub.lang && sub.lang.toLowerCase() === "thumbnails");
+    return Boolean(url && !isThumbnail);
+  });
 
-      return {
-        label: rawLabel,
-        language,
-        url,
-        default: isDefault,
-      };
-    });
+  const hasExplicitDefault = filtered.some((s) => s.default === true);
+
+  return filtered.map((sub, idx) => {
+    const url = (sub.file || sub.src)!;
+    const rawLabel = sub.label || sub.lang || "English";
+
+    // If label specifies a known non-English language (e.g. Arabic, French, German),
+    // prioritize the label over generic upstream lang: "en"
+    const labelLang = sub.label ? normalizeLanguageCode(sub.label) : null;
+    const isLabelNonEnglish = Boolean(labelLang && labelLang !== "en");
+
+    const language = isLabelNonEnglish
+      ? labelLang!
+      : normalizeLanguageCode(sub.lang || sub.label || "en");
+
+    let isDefault = false;
+    if (hasExplicitDefault) {
+      isDefault = sub.default === true;
+    } else {
+      // Default to the first English track if no subtitle is explicitly marked default
+      const isEnglish =
+        language === "en" || rawLabel.toLowerCase().includes("english");
+      const firstEnIndex = filtered.findIndex((s) => {
+        const sLabelLang = s.label ? normalizeLanguageCode(s.label) : null;
+        const sIsNonEn = Boolean(sLabelLang && sLabelLang !== "en");
+        const sLang = sIsNonEn
+          ? sLabelLang!
+          : normalizeLanguageCode(s.lang || s.label || "en");
+        return (
+          sLang === "en" || (s.label || "").toLowerCase().includes("english")
+        );
+      });
+      isDefault = isEnglish && idx === (firstEnIndex >= 0 ? firstEnIndex : 0);
+    }
+
+    return {
+      label: rawLabel,
+      language,
+      url,
+      default: isDefault,
+    };
+  });
 }

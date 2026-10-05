@@ -136,4 +136,59 @@ describe("ProviderRegistry (Unit)", () => {
     const stream = await registry.resolveStream("unknown", "frieren", 1, "sub");
     expect(stream).toBeNull();
   });
+
+  it("registers ZokoAnime, AnimeHub, HiAnime, and JustAnime by default", () => {
+    const registry = new ProviderRegistry();
+    const providers = registry.getAllProviders();
+    const ids = providers.map((p) => p.id);
+    expect(ids).toContain("zokoanime");
+    expect(ids).toContain("animehub");
+    expect(ids).toContain("hianime");
+    expect(ids).toContain("justanime");
+  });
+
+  it("pools search results across multiple valid titles before matching", async () => {
+    const multiSearchProvider: BaseProvider = {
+      id: "multi",
+      name: "Multi",
+      search: async (q: string) => {
+        if (q === "Sasaki and Miyano") {
+          return [
+            {
+              identifier: "sasaki-graduation",
+              name: "Sasaki and Miyano: Graduation Arc",
+              languages: ["sub"],
+            },
+          ];
+        }
+        if (q === "Sasaki to Miyano") {
+          return [
+            {
+              identifier: "sasaki-tv",
+              name: "Sasaki to Miyano",
+              languages: ["sub", "dub"],
+            },
+          ];
+        }
+        return [];
+      },
+      getEpisodes: async (id) => ({
+        episodes: id === "sasaki-tv" ? [1, 2, 3] : [1],
+        servers: [{ id: "srv1", name: "Server 1" }],
+      }),
+      getStream: async () => null,
+    };
+
+    const registry = new ProviderRegistry({
+      providers: [multiSearchProvider],
+    });
+
+    const services = await registry.checkAvailability(
+      ["Sasaki and Miyano", "Sasaki to Miyano"],
+      2,
+    );
+
+    expect(services).toHaveLength(2); // sub and dub for Sasaki to Miyano
+    expect(services[0].identifier).toBe("sasaki-tv");
+  });
 });

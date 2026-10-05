@@ -86,6 +86,43 @@ describe("titleMatcher", () => {
       expect(match?.identifier).toBe("frieren-s2");
     });
 
+    it("matches 'and' and 'to' titles interchangeably", async () => {
+      const sasakiCandidates: ProviderSearchResult[] = [
+        {
+          identifier: "sasaki-and-miyano-graduation-3789",
+          name: "Sasaki and Miyano: Graduation Arc",
+          languages: ["sub"],
+        },
+        {
+          identifier: "sasaki-to-miyano",
+          name: "Sasaki and Miyano",
+          languages: ["sub", "dub"],
+        },
+      ];
+
+      const match = await matchBestSearchResult(
+        ["Sasaki to Miyano"],
+        sasakiCandidates,
+      );
+      expect(match?.identifier).toBe("sasaki-to-miyano");
+    });
+
+    it("matches by identifier slug when provider name differs", async () => {
+      const slugCandidates: ProviderSearchResult[] = [
+        {
+          identifier: "sora-wa-akai-kawa-no-hotori",
+          name: "Red River",
+          languages: ["sub"],
+        },
+      ];
+
+      const match = await matchBestSearchResult(
+        ["Sora wa Akai Kawa no Hotori"],
+        slugCandidates,
+      );
+      expect(match?.identifier).toBe("sora-wa-akai-kawa-no-hotori");
+    });
+
     it("safely handles empty targetTitles array without throwing", async () => {
       const match = await matchBestSearchResult([], candidates);
       expect(match).toBe(candidates[0]);

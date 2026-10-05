@@ -95,4 +95,55 @@ describe("AnimeHubProvider (Unit)", () => {
     expect(stream?.container).toBe("hls");
     expect(stream?.serverName).toBe("F5 - HQ");
   });
+
+  it("resolves stream through modern iframe player with MAL stream embedding", async () => {
+    const embedUrl = "https://play2.echovideo.ru/embed-3/xyz123";
+    const iframeHtml = `
+      <html>
+        <body>
+          <iframe id="playerIframe" src="https://megaplay.buzz/stream/mal/52991/1/sub"></iframe>
+        </body>
+      </html>
+    `;
+
+    const { obfuscateOtakuBlob } = await import("../utils/cipher.js");
+    const payload = JSON.stringify({
+      src: "https://hls.example.com/frieren/master.m3u8",
+      subtitles: [
+        {
+          label: "English",
+          lang: "en",
+          src: "https://hls.example.com/frieren/en.vtt",
+        },
+      ],
+    });
+    const blob = obfuscateOtakuBlob(payload);
+    const zokoHtml = `<html><script>window.__P = "${blob}";</script></html>`;
+
+    const mockFetch: typeof fetch = async (url) => {
+      const u = String(url);
+      if (u.includes("/ajax/episode/info?epr=sousou-no-frieren/1/0")) {
+        return new Response(JSON.stringify({ target: embedUrl }), {
+          status: 200,
+        });
+      }
+      if (u === embedUrl) {
+        return new Response(iframeHtml, { status: 200 });
+      }
+      if (u.includes("zokoanime.video/stream/mal/52991/1/sub")) {
+        return new Response(zokoHtml, { status: 200 });
+      }
+      return new Response("Not found", { status: 404 });
+    };
+
+    const provider = new AnimeHubProvider({ fetchFn: mockFetch });
+    const stream = await provider.getStream("sousou-no-frieren", 1, "sub", "0");
+
+    expect(stream).not.toBeNull();
+    expect(stream?.url).toBe("https://hls.example.com/frieren/master.m3u8");
+    expect(stream?.container).toBe("hls");
+    expect(stream?.serverName).toBe("F5 - HQ");
+    expect(stream?.subtitles).toHaveLength(1);
+    expect(stream?.subtitles?.[0].language).toBe("en");
+  });
 });

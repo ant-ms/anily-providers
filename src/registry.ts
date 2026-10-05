@@ -11,6 +11,7 @@ import { getServiceScore } from "./qualityScore.js";
 import { AnimeHubProvider } from "./providers/animehub.js";
 import { HiAnimeProvider } from "./providers/hianime.js";
 import { JustAnimeProvider } from "./providers/justanime.js";
+import { ZokoAnimeProvider } from "./providers/zokoanime.js";
 import { matchBestSearchResult } from "./titleMatcher.js";
 import { getLogger } from "./utils/logger.js";
 
@@ -36,6 +37,7 @@ export class ProviderRegistry {
         this.register(p);
       }
     } else {
+      this.register(new ZokoAnimeProvider());
       this.register(new AnimeHubProvider());
       this.register(new HiAnimeProvider());
       this.register(new JustAnimeProvider());
@@ -88,20 +90,38 @@ export class ProviderRegistry {
               ),
             );
 
+            // Pool and deduplicate search results across all searched titles
+            const candidateMap = new Map<string, ProviderSearchResult>();
             for (const searchResults of searches) {
-              if (searchResults.length > 0) {
-                const match = await this.titleMatcher(
-                  validTitles,
-                  searchResults,
-                  options?.titleMatcherOptions,
-                );
-                if (match) {
-                  matchedIdentifier = match.identifier;
-                  matchedLanguages = match.languages;
-                  break;
+              for (const r of searchResults) {
+                if (!candidateMap.has(r.identifier)) {
+                  candidateMap.set(r.identifier, {
+                    ...r,
+                    languages: [...r.languages],
+                  });
+                } else {
+                  const existing = candidateMap.get(r.identifier)!;
+                  for (const lang of r.languages) {
+                    if (!existing.languages.includes(lang)) {
+                      existing.languages.push(lang);
+                    }
+                  }
                 }
               }
             }
+
+            const allCandidates = Array.from(candidateMap.values());
+            if (allCandidates.length === 0) return;
+
+            const match = await this.titleMatcher(
+              validTitles,
+              allCandidates,
+              options?.titleMatcherOptions,
+            );
+            if (!match) return;
+
+            matchedIdentifier = match.identifier;
+            matchedLanguages = match.languages;
 
             if (!matchedIdentifier) return;
 

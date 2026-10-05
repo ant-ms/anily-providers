@@ -15,6 +15,7 @@ export const SCORE_WEIGHT_ZOKOANIME = 8;
 export const SCORE_WEIGHT_1080P = 4;
 export const SCORE_WEIGHT_720P = 2;
 export const SCORE_WEIGHT_GENERIC_HD = 1;
+export const SCORE_WEIGHT_ZOKOANIME_PROVIDER = 4;
 export const SCORE_WEIGHT_JUSTANIME = 3;
 export const SCORE_WEIGHT_HIANIME = 2;
 export const PENALTY_THROTTLED_SERVERS = -5;
@@ -30,6 +31,7 @@ export interface QualityScoreOptions {
 }
 
 export const DEFAULT_PROVIDER_WEIGHTS: Record<string, number> = {
+  zokoanime: SCORE_WEIGHT_ZOKOANIME_PROVIDER,
   justanime: SCORE_WEIGHT_JUSTANIME,
   hianime: SCORE_WEIGHT_HIANIME,
 };

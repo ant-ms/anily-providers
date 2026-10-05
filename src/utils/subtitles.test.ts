@@ -53,5 +53,27 @@ describe("subtitles utility", () => {
       expect(parsed[0].language).toBe("es");
       expect(parsed[1].language).toBe("fr");
     });
+
+    it("correctly identifies non-English languages when upstream provides generic lang 'en'", () => {
+      const parsed = parseSubtitles([
+        { file: "https://example.com/en.vtt", label: "English", lang: "en" },
+        { file: "https://example.com/ar.vtt", label: "Arabic", lang: "en" },
+        { file: "https://example.com/fr.vtt", label: "French", lang: "en" },
+        { file: "https://example.com/de.vtt", label: "German", lang: "en" },
+      ]);
+
+      expect(parsed).toHaveLength(4);
+      expect(parsed[0].language).toBe("en");
+      expect(parsed[0].default).toBe(true);
+
+      expect(parsed[1].language).toBe("ar");
+      expect(parsed[1].default).toBe(false);
+
+      expect(parsed[2].language).toBe("fr");
+      expect(parsed[2].default).toBe(false);
+
+      expect(parsed[3].language).toBe("de");
+      expect(parsed[3].default).toBe(false);
+    });
   });
 });
