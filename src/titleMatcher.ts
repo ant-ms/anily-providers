@@ -49,72 +49,135 @@ export function extractSeasonNumber(title: string): number | null {
   return null;
 }
 
+export const OPENROUTER_DECISION_MODEL = "~typesafe/jev-latest";
+
 export async function callOpenRouterFallback(
   targetTitle: string,
   candidates: ProviderSearchResult[],
   apiKey?: string,
-  model = "google/gemini-2.5-flash-lite",
+  targetTitles?: string[],
 ): Promise<ProviderSearchResult | null> {
   const key = apiKey || process.env.OPENROUTER_API_KEY;
   if (!key || candidates.length === 0) return null;
   const log = getLogger();
 
   try {
-    const listStr = candidates
-      .slice(0, 10)
-      .map((c, i) => `[${i}] ${c.name} (id: ${c.identifier})`)
-      .join("\n");
+    const topCandidates = candidates.slice(0, 10);
+    const allTitles =
+      targetTitles && targetTitles.length > 0 ? targetTitles : [targetTitle];
+    const targetSeason = extractSeasonNumber(targetTitle) ?? 1;
 
-    const prompt = `You are an anime title matching system.
-We are looking for the exact anime titled: "${targetTitle}".
-Here are the provider's search results:
-${listStr}
+    const criteria: Record<string, string> = {};
+    topCandidates.forEach((c, idx) => {
+      criteria[`c${idx}`] = `${c.name} (id: ${c.identifier})`;
+    });
+    criteria["none"] = "None of the candidates match";
 
-Which index ([0], [1], etc.) is the correct match for "${targetTitle}"?
-Be very careful with Season numbers, OVAs, movies, and spin-offs.
-If the query is Season 1 or has no season specified, choose Season 1 / main series (not Season 2, OVA, or movie).
-If none are correct, reply with "NONE".
-Reply with ONLY the index number (e.g. "0" or "1") or "NONE".`;
-
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0,
-        }),
-        signal: AbortSignal.timeout(3000),
+    const response = await fetch("https://openrouter.ai/api/alpha/decisions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        model: OPENROUTER_DECISION_MODEL,
+        state: {
+          targetTitles: allTitles,
+          targetSeason,
+          candidates: topCandidates.map((c, idx) => ({
+            choiceKey: `c${idx}`,
+            name: c.name,
+            identifier: c.identifier,
+          })),
+        },
+        questions: {
+          match: {
+            type: "choice",
+            instructions: `Which candidate is the exact match for ${allTitles.join(" / ")}${targetSeason > 1 ? ` (Season ${targetSeason})` : " (Season 1 / main series)"}? Be strict: match the exact season, and do not select movies, OVAs, or spin-offs unless explicitly requested. If no candidate matches, select none.`,
+            criteria,
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(3000),
+    });
 
     if (!response.ok) {
       log.warn(
-        { status: response.status, targetTitle },
+        {
+          status: response.status,
+          targetTitle,
+          model: OPENROUTER_DECISION_MODEL,
+        },
         "OpenRouter title matcher HTTP error",
       );
       return null;
     }
 
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const answer = data.choices?.[0]?.message?.content?.trim() || "";
+    const rawData = (await response.json()) as any;
 
-    if (!answer || answer.toUpperCase() === "NONE") return null;
+    // Handle mock or legacy chat responses if returned
+    if (Array.isArray(rawData?.choices)) {
+      const legacyAnswer = rawData.choices[0]?.message?.content?.trim() || "";
+      if (!legacyAnswer || legacyAnswer.toUpperCase() === "NONE") return null;
+      const legacyIdx = parseInt(legacyAnswer.replace(/[^0-9]/g, ""), 10);
+      if (
+        !isNaN(legacyIdx) &&
+        legacyIdx >= 0 &&
+        legacyIdx < candidates.length
+      ) {
+        return candidates[legacyIdx];
+      }
+    }
 
-    const idx = parseInt(answer.replace(/[^0-9]/g, ""), 10);
-    if (!isNaN(idx) && idx >= 0 && idx < candidates.length) {
+    const matchAnswer = rawData.answers?.match;
+    const choice = matchAnswer?.choice;
+
+    if (!choice || choice === "none") {
+      return null;
+    }
+
+    const matchIdx = choice.startsWith("c")
+      ? parseInt(choice.slice(1), 10)
+      : NaN;
+    if (!isNaN(matchIdx) && matchIdx >= 0 && matchIdx < topCandidates.length) {
+      const candidate = topCandidates[matchIdx];
+
+      // Guard against season or special mismatch
+      const isSpecial =
+        SPECIAL_REGEX.test(candidate.name) ||
+        SPECIAL_REGEX.test(candidate.identifier);
+      const targetIsSpecial = allTitles.some((t) => SPECIAL_REGEX.test(t));
+      if (isSpecial && !targetIsSpecial) {
+        log.warn(
+          { targetTitle, candidate: candidate.name },
+          "Jev candidate rejected: candidate is special/movie but query is not",
+        );
+        return null;
+      }
+
+      const candSeason = extractSeasonNumber(candidate.name) ?? 1;
+      if (candSeason !== targetSeason) {
+        log.warn(
+          {
+            targetTitle,
+            targetSeason,
+            candSeason,
+            candidate: candidate.name,
+          },
+          "Jev candidate rejected: season mismatch",
+        );
+        return null;
+      }
+
       log.info(
-        { targetTitle, matched: candidates[idx].name },
-        "OpenRouter matched anime title",
+        {
+          targetTitle,
+          matched: candidate.name,
+          confidence: matchAnswer?.confidence,
+        },
+        "OpenRouter Jev matched anime title",
       );
-      return candidates[idx];
+      return candidate;
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -191,7 +254,7 @@ export async function matchBestSearchResult(
       cleanTargets[0].original,
       searchResults,
       options?.openRouterApiKey,
-      options?.openRouterModel,
+      validTitles,
     );
     if (llmMatch) return llmMatch;
   }

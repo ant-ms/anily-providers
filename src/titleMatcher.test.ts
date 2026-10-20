@@ -197,5 +197,73 @@ describe("titleMatcher", () => {
         globalThis.fetch = originalFetch;
       }
     });
+
+    it("matches candidate using OpenRouter Jev decisions response schema", async () => {
+      const originalFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = async (_url, options) => {
+          const body = JSON.parse(options?.body as string);
+          expect(body.model).toBe("~typesafe/jev-latest");
+          return new Response(
+            JSON.stringify({
+              model: "typesafe/jev-1.14-20261014",
+              answers: {
+                match: {
+                  type: "choice",
+                  choice: "c1",
+                  confidence: 0.95,
+                  probabilities: { c0: 0.05, c1: 0.95, none: 0 },
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        };
+
+        const match = await matchBestSearchResult(
+          ["Frieren: Beyond Journey's End Season 2"],
+          candidates,
+          {
+            openRouterApiKey: "test-api-key",
+          },
+        );
+
+        expect(match?.identifier).toBe("frieren-s2");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("rejects Jev match if candidate is a movie/special when TV series was requested", async () => {
+      const originalFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = async () =>
+          new Response(
+            JSON.stringify({
+              answers: {
+                match: {
+                  type: "choice",
+                  choice: "c2", // frieren-movie
+                },
+              },
+            }),
+            { status: 200 },
+          );
+
+        // Target is Season 1 TV series; Jev mistakenly picked frieren-movie (c2)
+        // Guard should reject c2 and fall back to heuristic match frieren-s1
+        const match = await matchBestSearchResult(
+          ["Sousou no Frieren TV"],
+          candidates,
+          {
+            openRouterApiKey: "test-api-key",
+          },
+        );
+
+        expect(match?.identifier).toBe("frieren-s1");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 });

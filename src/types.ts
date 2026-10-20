@@ -63,7 +63,6 @@ export interface Logger {
 
 export interface TitleMatcherOptions {
   openRouterApiKey?: string;
-  openRouterModel?: string;
   customLlmMatcher?: (
     targetTitle: string,
     candidates: ProviderSearchResult[],
