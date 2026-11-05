@@ -19,7 +19,7 @@ importers:
         version: 11.5.3
       m3u8-parser:
         specifier: ^7.2.0
-        version: 7.2.0
+        version: 7.2.1
     devDependencies:
       '@types/m3u8-parser':
         specifier: ^7.2.6
@@ -790,8 +790,9 @@ packages:
     resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
     engines: {node: 20 || >=22}
 
-  m3u8-parser@7.2.0:
-    resolution: {integrity: sha512-CRatFqpjVtMiMaKXxNvuI3I++vUumIXVVT/JpCpdU/FynV/ceVw1qpPyyBNindL+JlPMSesx+WX1QJaZEJSaMQ==}
+  m3u8-parser@7.2.1:
+    resolution: {integrity: sha512-doiyBRizXYFn7g9Ss4ZWAq1rF1KGpko6dRUemBakphiLJnmG61XifhQpyfYzgKkJpCE/F40APpEIDaM7PBjA3Q==}
+    engines: {node: ^22.13.0 || >=24}
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -1610,7 +1611,7 @@ snapshots:
 
   lru-cache@11.5.3: {}
 
-  m3u8-parser@7.2.0:
+  m3u8-parser@7.2.1:
     dependencies:
       '@babel/runtime': 7.29.7
       '@videojs/vhs-utils': 4.1.2
